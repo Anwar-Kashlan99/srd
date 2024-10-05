@@ -108,7 +108,6 @@ const GoLive = () => {
           <video
             id={`video-${streamerID}`}
             ref={(instance) => provideRef(instance, streamerID)}
-            autoPlay
             playsInline
             muted={streamerID === userDetails._id} // Mute self for streamer
             style={{
