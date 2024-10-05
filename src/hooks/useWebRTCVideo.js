@@ -126,6 +126,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [roomId]);
 
   const captureMedia = async () => {
+    if (localMediaStream.current) {
+      console.log("Media stream already exists. Skipping new capture.");
+      return; // Avoid re-capturing media stream
+    }
     console.log("Requesting media permissions...");
     try {
       // Define video constraints for high quality
@@ -176,7 +180,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
       if (connections.current[peerId]) return;
-
       const iceServers = [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
@@ -205,25 +208,22 @@ export const useWebRTCVideo = (roomId, userDetails) => {
           credential: "dr9/NfX7eSdwKpFF",
         },
       ];
-
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      connection.ontrack = ({ streams: [remoteStream] }) => {
-        // This is where the viewer receives the streamer's media
-        if (clientsRef.current[0]._id !== user._id) {
-          // Add user to clients (muted because they're just viewing)
-          addNewClient({ ...user, muted: true });
+      // Check if localMediaStream is available before adding tracks
+      if (localMediaStream.current) {
+        localMediaStream.current.getTracks().forEach((track) => {
+          connection.addTrack(track, localMediaStream.current);
+        });
+      } else {
+        console.error("localMediaStream is null. Cannot add tracks.");
+        return;
+      }
 
-          // Play the streamer's video and audio for viewers
-          const videoElement = document.getElementById(`video-${user._id}`);
-          if (videoElement) {
-            videoElement.srcObject = remoteStream;
-            videoElement.play().catch((error) => {
-              console.error("Error playing video:", error);
-            });
-          }
-        }
+      // Receive remote tracks (from other peers)
+      connection.ontrack = ({ streams: [remoteStream] }) => {
+        setRemoteStream(user, remoteStream);
       };
 
       if (createOffer) {
@@ -279,6 +279,21 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       console.error("Error setting remote description", error);
     }
   };
+  //
+  const setRemoteStream = (user, remoteStream) => {
+    // Find the video element by user ID or dynamically create it
+    const videoElement = document.getElementById(`video-${user._id}`);
+
+    if (videoElement) {
+      // If the stream is different or not set, set it
+      if (videoElement.srcObject !== remoteStream) {
+        videoElement.srcObject = remoteStream;
+      }
+      videoElement.play().catch((error) => {
+        console.error("Error playing the remote video stream:", error);
+      });
+    }
+  };
 
   const handleIceCandidate = async ({ peerId, icecandidate }) => {
     const connection = connections.current[peerId];
@@ -308,15 +323,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       console.error(`Connection not found for peer ${peerId}`);
     }
   };
-
   const handleRemovePeer = ({ peerId, userId }) => {
     if (connections.current[peerId]) {
       connections.current[peerId].close();
       delete connections.current[peerId];
     }
 
-    delete audioElements.current[userId];
-    setClients((list) => list.filter((client) => client._id !== userId));
+    setClients((prevClients) =>
+      prevClients.filter((client) => client._id !== userId)
+    );
   };
 
   const handleSetMute = (mute, userId) => {
