@@ -126,6 +126,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [roomId]);
 
   const captureMedia = async () => {
+    console.log("Requesting media permissions...");
     try {
       // Define video constraints for high quality
       const videoConstraints = {
@@ -143,7 +144,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         },
         video: videoConstraints, // Applying video constraints for high quality
       });
-
+      console.log("Media captured successfully", localMediaStream.current);
       console.log("Streamer media captured with high quality.");
 
       const videoElement = document.getElementById(`video-${userDetails._id}`);
