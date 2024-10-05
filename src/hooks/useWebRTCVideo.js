@@ -128,47 +128,42 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const captureMedia = async () => {
     if (localMediaStream.current) {
       console.log("Media stream already exists. Skipping new capture.");
-      return; // Avoid re-capturing media stream
+      return; // Exit early if the stream already exists
     }
-    console.log("Requesting media permissions...");
+
     try {
-      // Define video constraints for high quality
       const videoConstraints = {
-        width: { ideal: 1920 }, // Ideal width for HD video
-        height: { ideal: 1080 }, // Ideal height for HD video
-        frameRate: { ideal: 30 }, // Requesting 30 FPS for smoother video
-        aspectRatio: 16 / 9, // Optional, if you want to lock the aspect ratio
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 },
       };
 
+      // Capture media stream
       localMediaStream.current = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
-        video: videoConstraints, // Applying video constraints for high quality
+        video: videoConstraints,
       });
-      console.log("Media captured successfully", localMediaStream.current);
+
       console.log("Streamer media captured with high quality.");
 
       const videoElement = document.getElementById(`video-${userDetails._id}`);
       if (videoElement) {
-        if (videoElement.srcObject !== localMediaStream.current) {
-          videoElement.srcObject = localMediaStream.current;
-        }
-
+        videoElement.srcObject = localMediaStream.current;
         videoElement.oncanplay = () => {
-          videoElement.play().catch((error) => {
-            console.error("Error playing video stream:", error);
-          });
+          videoElement.play().catch(console.error);
         };
       }
 
-      addLocalTracksToPeers(); // Add local media tracks to peer connections
+      // Now add local tracks to all peers
+      addLocalTracksToPeers();
     } catch (error) {
       console.error("Error capturing media:", error);
       toast.error(
-        "Error capturing media. Please ensure your browser has permission to access the microphone and camera."
+        "Error capturing media. Please check camera/microphone permissions."
       );
     }
   };
@@ -179,49 +174,27 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
-      if (connections.current[peerId]) return;
+      if (connections.current[peerId]) return; // Skip if connection exists
+
       const iceServers = [
         { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:stun4.l.google.com:19302" },
-        { urls: "stun:stun.relay.metered.ca:80" },
-        {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "c8090ecaa7eb2bc0bb45fcd3",
-          credential: "dr9/NfX7eSdwKpFF",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "c8090ecaa7eb2bc0bb45fcd3",
-          credential: "dr9/NfX7eSdwKpFF",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "c8090ecaa7eb2bc0bb45fcd3",
-          credential: "dr9/NfX7eSdwKpFF",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "c8090ecaa7eb2bc0bb45fcd3",
-          credential: "dr9/NfX7eSdwKpFF",
-        },
+        // Add TURN servers if needed
       ];
+
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Check if localMediaStream is available before adding tracks
+      // Wait for the local media stream to be available before adding tracks
       if (localMediaStream.current) {
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
       } else {
         console.error("localMediaStream is null. Cannot add tracks.");
-        return;
+        return; // Exit early to avoid further errors
       }
 
-      // Receive remote tracks (from other peers)
+      // Handle remote track received from other peers
       connection.ontrack = ({ streams: [remoteStream] }) => {
         setRemoteStream(user, remoteStream);
       };
@@ -299,30 +272,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     const connection = connections.current[peerId];
     if (connection) {
       try {
-        if (connection.remoteDescription && connection.remoteDescription.type) {
+        if (connection.remoteDescription) {
           await connection.addIceCandidate(new RTCIceCandidate(icecandidate));
-          connection.onicecandidate = (event) => {
-            if (event.candidate) {
-              socket.current.emit(ACTIONS.RELAY_ICE, {
-                peerId,
-                icecandidate: event.candidate,
-              });
-            }
-          };
-          console.log(`ICE candidate added for peer ${peerId}`);
         } else {
-          // Queue the ICE candidate until remote description is set
+          // Queue ICE candidates if remote description is not set
           connection.queuedIceCandidates = connection.queuedIceCandidates || [];
           connection.queuedIceCandidates.push(icecandidate);
-          console.log(`ICE candidate queued for peer ${peerId}`);
         }
       } catch (error) {
         console.error(`Error adding ICE candidate for peer ${peerId}:`, error);
       }
-    } else {
-      console.error(`Connection not found for peer ${peerId}`);
     }
   };
+
   const handleRemovePeer = ({ peerId, userId }) => {
     if (connections.current[peerId]) {
       connections.current[peerId].close();
@@ -364,34 +326,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     if (localMediaStream.current) {
       Object.keys(connections.current).forEach((peerId) => {
         const connection = connections.current[peerId];
-        const senders = connection.getSenders();
 
         localMediaStream.current.getTracks().forEach((track) => {
-          const trackAlreadyAdded = senders.some(
-            (sender) => sender.track === track
-          );
-
-          if (!trackAlreadyAdded) {
-            const sender = connection.addTrack(track, localMediaStream.current);
-
-            // If the track is video, set a higher bitrate for better quality
-            if (track.kind === "video") {
-              const parameters = sender.getParameters();
-              if (!parameters.encodings) {
-                parameters.encodings = [{}];
-              }
-
-              // Set target bitrate for high-quality streaming
-              parameters.encodings[0].maxBitrate = 2500000; // 2.5 Mbps for high quality
-              parameters.encodings[0].minBitrate = 1000000; // 1 Mbps minimum to avoid too low quality
-              sender.setParameters(parameters);
-            }
-          } else {
-            const sender = senders.find((sender) => sender.track === track);
-            if (sender) {
-              sender.replaceTrack(track);
-            }
-          }
+          connection.addTrack(track, localMediaStream.current);
         });
       });
     }
