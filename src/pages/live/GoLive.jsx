@@ -110,7 +110,7 @@ const GoLive = () => {
           }}
         >
           <video
-            id={`video-${userDetails._id}`}
+            id={`video-${streamer?._id}`}
             ref={videoRef}
             playsInline
             muted={isStreamer} // Mute self for streamer
