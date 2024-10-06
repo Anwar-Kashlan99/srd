@@ -103,35 +103,36 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       console.log("Media stream already exists. Skipping new capture.");
       return; // Exit early if the stream already exists
     }
-  
+
     try {
       const videoConstraints = {
         width: { ideal: 1920 },
         height: { ideal: 1080 },
         frameRate: { ideal: 30 },
       };
-  
+
       // Capture media stream for the streamer only
       localMediaStream.current = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: videoConstraints,
       });
-  
+
       console.log("Streamer media captured.");
-  
+
       const videoElement = document.getElementById(`video-${userDetails._id}`);
       if (videoElement) {
         videoElement.srcObject = localMediaStream.current;
         videoElement.oncanplay = () => videoElement.play();
       }
-  
+
       addLocalTracksToPeers(); // Add local tracks to all peer connections
     } catch (error) {
       console.error("Error capturing media:", error);
-      toast.error("Error capturing media. Check camera/microphone permissions.");
+      toast.error(
+        "Error capturing media. Check camera/microphone permissions."
+      );
     }
   };
-  
 
   const handleJoin = ({ user }) => {
     if (streamer) {
@@ -142,25 +143,30 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
+      // Ensure user is not null or undefined
+      if (!user || !user._id) {
+        console.error("Invalid user data:", user);
+        return;
+      }
+
       if (connections.current[peerId]) return; // Skip if connection exists
-  
+
       const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
-  
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
-  
-      // Add the streamer's media tracks to the new peer connection
+
+      // Add the streamer's media tracks to the peer connection if you're the streamer
       if (localMediaStream.current && userDetails._id === streamer._id) {
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
       }
-  
+
       // Handle remote track received from the viewer's side
       connection.ontrack = ({ streams: [remoteStream] }) => {
         setRemoteStream(user, remoteStream); // Display the remote stream
       };
-  
+
       if (createOffer) {
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
@@ -173,7 +179,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       console.error("Error handling new peer:", error);
     }
   };
-  
 
   //
   const setRemoteMedia = async ({ peerId, sessionDescription }) => {
@@ -208,7 +213,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   //
   const setRemoteStream = (user, remoteStream) => {
     const videoElement = document.getElementById(`video-${user._id}`);
-    
+
     if (videoElement) {
       if (videoElement.srcObject !== remoteStream) {
         videoElement.srcObject = remoteStream;
@@ -219,7 +224,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
   };
 
-  
   const handleIceCandidate = async ({ peerId, icecandidate }) => {
     const connection = connections.current[peerId];
     if (connection) {
@@ -227,16 +231,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         if (connection.remoteDescription) {
           await connection.addIceCandidate(new RTCIceCandidate(icecandidate));
         } else {
-          // Queue ICE candidates if the remote description is not set yet
           connection.queuedIceCandidates = connection.queuedIceCandidates || [];
-          connection.queuedIceCandidates.push(icecandidate);
+          connection.queuedIceCandidates.push(icecandidate); // Queue if remote description not set
         }
       } catch (error) {
         console.error(`Error adding ICE candidate for peer ${peerId}:`, error);
       }
     }
   };
-  
+
   const handleRemovePeer = ({ peerId, userId }) => {
     if (connections.current[peerId]) {
       connections.current[peerId].close();
@@ -246,7 +249,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     if (userId === streamer?._id) {
       setStreamer(null); // If streamer leaves
     } else {
-      setViewers((prevViewers) => prevViewers.filter((viewer) => viewer._id !== userId));
+      setViewers((prevViewers) =>
+        prevViewers.filter((viewer) => viewer._id !== userId)
+      );
     }
   };
 
@@ -264,14 +269,17 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     if (localMediaStream.current) {
       Object.keys(connections.current).forEach((peerId) => {
         const connection = connections.current[peerId];
-  
+
+        // Check if track has already been added to avoid adding duplicates
+        const senders = connection.getSenders();
         localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current);
+          if (!senders.find((sender) => sender.track === track)) {
+            connection.addTrack(track, localMediaStream.current); // Add track if not already added
+          }
         });
       });
     }
   };
-  
 
   const handleMessageReceived = (data) => {
     console.log("Received message data:", data);
