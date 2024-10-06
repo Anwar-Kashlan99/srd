@@ -179,21 +179,34 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Check if the local media stream exists and the current user is the streamer
-      if (localMediaStream.current) {
-        console.log("Adding local media tracks to new peer connection.");
+      // If the streamer is not yet set, retry adding tracks when the streamer is available
+      const retryAddingTracks = (retryCount = 0) => {
+        if (retryCount > 5) {
+          // Retry up to 5 times before giving up
+          console.log("Failed to add tracks after multiple retries.");
+          return;
+        }
 
-        // Ensure `streamer` is set and valid before trying to access its `_id`
-        if (streamer && streamer._id && userDetails._id === streamer._id) {
+        if (
+          localMediaStream.current &&
+          streamer &&
+          streamer._id &&
+          userDetails._id === streamer._id
+        ) {
+          console.log("Adding local media tracks to new peer connection.");
           localMediaStream.current.getTracks().forEach((track) => {
             connection.addTrack(track, localMediaStream.current);
           });
         } else {
-          console.log("User is not the streamer or streamer is not yet set.");
+          console.log(
+            "User is not the streamer or streamer is not yet set. Retrying..."
+          );
+          setTimeout(() => retryAddingTracks(retryCount + 1), 500); // Retry after 500ms
         }
-      } else {
-        console.log("No local media stream found.");
-      }
+      };
+
+      // Try adding local tracks immediately, if possible
+      retryAddingTracks();
 
       // Handle remote track received (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
