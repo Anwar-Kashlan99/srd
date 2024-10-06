@@ -80,7 +80,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         // Emit the JOIN action
         socket.current.emit(ACTIONS.JOIN, {
           roomId,
-          user: { ...userDetails, role: userDetails.role },
+          user: { ...userDetails, role: userDetails.role || "audience" },
         });
       } catch (error) {
         console.error("Error initializing chat:", error);
