@@ -157,7 +157,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       connections.current[peerId] = connection;
 
       // Add the streamer's media tracks to the new peer connection if you are the streamer
-      if (localMediaStream.current && userDetails._id === streamer._id) {
+      if (localMediaStream.current && userDetails?._id === streamer?._id) {
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
