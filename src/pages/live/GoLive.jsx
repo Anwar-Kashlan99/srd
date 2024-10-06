@@ -52,20 +52,23 @@ const GoLive = () => {
 
   // WebRTC hooks
   const {
-    clients,
+    streamer,
+    viewers,
     provideRef,
     handleMute,
     endRoom,
     blockUser,
     messages,
     sendMessage,
-    localMediaStream,
   } = useWebRTCVideo(roomId, userDetails);
 
   // Determine if the current user is the streamer or a viewer
-  const isStreamer = clients.length && clients[0]._id === userDetails._id;
-  const currentUser = clients.find((client) => client._id === userDetails._id);
-  const streamerID = clients[0]?._id;
+  const isStreamer = streamer && streamer._id === userDetails._id;
+  const currentUser =
+    streamer?._id === userDetails._id
+      ? streamer
+      : viewers.find((v) => v._id === userDetails._id);
+  const streamerID = streamer?._id;
 
   // Function to handle mute/unmute for streamer
   const toggleMute = () => {
@@ -109,14 +112,14 @@ const GoLive = () => {
             id={`video-${streamerID}`}
             ref={(instance) => provideRef(instance, streamerID)}
             playsInline
-            muted={streamerID === userDetails._id} // Mute self for streamer
+            muted={isStreamer} // Mute self for streamer
             style={{
               width: "100%",
               height: "100%",
               objectFit: "cover",
             }}
           />
-          {streamerID === userDetails._id && (
+          {isStreamer && (
             <IconButton
               onClick={toggleMute}
               sx={{
@@ -136,27 +139,29 @@ const GoLive = () => {
           )}
         </Box>
         {/*chat */}
-        <Box
-          sx={{
-            width: "500px",
-            borderRadius: "30px",
-            backgroundColor: "#fff",
-            boxShadow: "2px 4px 7px #707070",
-            p: "1rem",
-            height: isBigScreen
-              ? "700px"
-              : isMobile
-              ? "calc(100vh - 56px)"
-              : "600px",
-          }}
-        >
-          <ChatRoomLive
-            reverse={true}
-            messages={messages}
-            sendMessage={sendMessage}
-            currentUserId={currentUser}
-          />
-        </Box>
+        {!isMobile && (
+          <Box
+            sx={{
+              width: "500px",
+              borderRadius: "30px",
+              backgroundColor: "#fff",
+              boxShadow: "2px 4px 7px #707070",
+              p: "1rem",
+              height: isBigScreen
+                ? "700px"
+                : isMobile
+                ? "calc(100vh - 56px)"
+                : "600px",
+            }}
+          >
+            <ChatRoomLive
+              reverse={true}
+              messages={messages}
+              sendMessage={sendMessage}
+              currentUserId={currentUser}
+            />
+          </Box>
+        )}
       </Box>
     </Box>
   );

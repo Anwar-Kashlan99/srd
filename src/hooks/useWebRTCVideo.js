@@ -8,7 +8,8 @@ import { useStateWithCallback } from "./useStateWithCallback";
 import { socketInitLive } from "../socket";
 
 export const useWebRTCVideo = (roomId, userDetails) => {
-  const [clients, setClients] = useStateWithCallback([]);
+  const [streamer, setStreamer] = useStateWithCallback(null); // Single streamer object
+  const [viewers, setViewers] = useStateWithCallback([]); // List of viewers
 
   const [messages, setMessages] = useState([]);
 
@@ -20,34 +21,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const navigate = useNavigate();
 
-  const addNewClient = useCallback(
-    (newClient) => {
-      setClients((existingClients) => {
-        const clientIndex = existingClients.findIndex(
-          (client) => client._id === newClient._id
-        );
-
-        if (clientIndex !== -1) {
-          // Update existing client
-          const updatedClients = [...existingClients];
-          updatedClients[clientIndex] = {
-            ...updatedClients[clientIndex],
-            ...newClient,
-          };
-          return updatedClients;
-        } else {
-          // Add new client
-          return [...existingClients, newClient];
-        }
-      });
-    },
-    [setClients]
-  );
-
-  // Keep the clients list in sync with a ref to avoid stale closures
+  // Keep the viewers list in sync with a ref to avoid stale closures
   useEffect(() => {
-    clientsRef.current = clients;
-  }, [clients]);
+    clientsRef.current = viewers;
+  }, [viewers]);
 
   useEffect(() => {
     const initChat = async () => {
@@ -75,16 +52,16 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
         // Room clients listener
         socket.current.on(ACTIONS.ROOM_CLIENTS, ({ roomId, clients }) => {
-          setClients(clients, () => {
-            if (clients.length && clients[0]._id === userDetails._id) {
-              console.log("You are the streamer.");
-              captureMedia(); // Capture media when clients array is ready and user is the streamer
+          // Identify streamer and viewers
+          clients.forEach((client) => {
+            if (client._id === userDetails._id) {
+              setStreamer(client); // You are the streamer
+              captureMedia(); // Only the streamer captures media
             } else {
-              console.log("You are a viewer.");
+              setViewers((prevViewers) => [...prevViewers, client]); // Add a viewer
             }
           });
         });
-
         socket.current.on(ACTIONS.ERROR, handleErrorRoom);
         socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
 
@@ -102,7 +79,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         cleanupConnections();
       }
     };
-  }, [roomId, userDetails, addNewClient]);
+  }, [roomId, userDetails]);
 
   const cleanupConnections = useCallback(() => {
     for (let peerId in connections.current) {
@@ -169,7 +146,11 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   const handleJoin = ({ user }) => {
-    addNewClient({ ...user });
+    if (user._id === userDetails._id) {
+      setStreamer(user); // You are the streamer
+    } else {
+      setViewers((existingViewers) => [...existingViewers, user]); // Add a viewer
+    }
   };
 
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
@@ -184,19 +165,16 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Wait for the local media stream to be available before adding tracks
-      if (localMediaStream.current) {
+      // If you're the streamer, add your media tracks to the peer connection
+      if (userDetails._id === streamer._id && localMediaStream.current) {
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
-      } else {
-        console.error("localMediaStream is null. Cannot add tracks.");
-        return; // Exit early to avoid further errors
       }
 
-      // Handle remote track received from other peers
+      // Handle remote track received from other peers (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
-        setRemoteStream(user, remoteStream);
+        setRemoteStream(user, remoteStream); // Attach the viewer's stream
       };
 
       if (createOffer) {
@@ -218,35 +196,25 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     if (!connection) return;
 
     try {
-      // Check the connection state before setting the remote description
-      if (
-        connection.signalingState !== "stable" ||
-        sessionDescription.type === "offer"
-      ) {
-        await connection.setRemoteDescription(
-          new RTCSessionDescription(sessionDescription)
-        );
+      await connection.setRemoteDescription(
+        new RTCSessionDescription(sessionDescription)
+      );
 
-        if (sessionDescription.type === "offer") {
-          const answer = await connection.createAnswer();
-          await connection.setLocalDescription(answer);
-          socket.current.emit(ACTIONS.RELAY_SDP, {
-            peerId,
-            sessionDescription: answer,
-          });
-        }
+      if (sessionDescription.type === "offer") {
+        const answer = await connection.createAnswer();
+        await connection.setLocalDescription(answer);
+        socket.current.emit(ACTIONS.RELAY_SDP, {
+          peerId,
+          sessionDescription: answer,
+        });
+      }
 
-        // Add queued ICE candidates after setting the remote description
-        if (connection.queuedIceCandidates) {
-          for (const candidate of connection.queuedIceCandidates) {
-            await connection.addIceCandidate(new RTCIceCandidate(candidate));
-          }
-          connection.queuedIceCandidates = [];
+      // Add any queued ICE candidates after the remote description is set
+      if (connection.queuedIceCandidates) {
+        for (const candidate of connection.queuedIceCandidates) {
+          await connection.addIceCandidate(new RTCIceCandidate(candidate));
         }
-      } else {
-        console.warn(
-          `Connection state is ${connection.signalingState}, skipping setRemoteDescription.`
-        );
+        connection.queuedIceCandidates = [];
       }
     } catch (error) {
       console.error("Error setting remote description", error);
@@ -254,11 +222,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
   //
   const setRemoteStream = (user, remoteStream) => {
-    // Find the video element by user ID or dynamically create it
     const videoElement = document.getElementById(`video-${user._id}`);
 
     if (videoElement) {
-      // If the stream is different or not set, set it
       if (videoElement.srcObject !== remoteStream) {
         videoElement.srcObject = remoteStream;
       }
@@ -284,38 +250,27 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       }
     }
   };
-
   const handleRemovePeer = ({ peerId, userId }) => {
     if (connections.current[peerId]) {
       connections.current[peerId].close();
       delete connections.current[peerId];
     }
 
-    setClients((prevClients) =>
-      prevClients.filter((client) => client._id !== userId)
-    );
+    if (userId !== streamer._id) {
+      setViewers((prevViewers) =>
+        prevViewers.filter((viewer) => viewer._id !== userId)
+      );
+    }
   };
 
   const handleSetMute = (mute, userId) => {
-    setClients((prevClients) =>
-      prevClients.map((client) =>
-        client._id === userId
-          ? { ...client, muted: mute, speaking: mute ? false : client.speaking }
-          : client
-      )
-    );
-
-    if (userId === userDetails._id) {
+    if (userId === streamer._id) {
       // Handle possible errors in toggling tracks
       if (localMediaStream.current) {
         localMediaStream.current.getTracks().forEach((track) => {
           if (track.kind === "audio") {
-            try {
-              track.enabled = !mute;
-              console.log(`Track ${track.kind} enabled: ${track.enabled}`);
-            } catch (error) {
-              console.error("Error enabling/disabling audio track:", error);
-            }
+            track.enabled = !mute;
+            console.log(`Track ${track.kind} enabled: ${track.enabled}`);
           }
         });
       }
@@ -333,7 +288,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       });
     }
   };
-
   const handleMessageReceived = (data) => {
     console.log("Received message data:", data);
 
@@ -354,18 +308,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   const handleRoomEnded = () => {
-    toast("Room ended", { icon: "⚠️" });
-    navigate("/srdhouse");
+    toast("Live ended", { icon: "⚠️" });
+    navigate("/allbroadcasts");
   };
 
   const handleErrorRoom = () => {
-    toast("You are blocked from this room");
-    navigate("/srdhouse");
+    toast("You are blocked from this live");
+    navigate("/allbroadcasts");
   };
 
   const provideRef = (instance, userId) => {
     audioElements.current[userId] = instance;
   };
+
   const handleMute = (isMute, userId) => {
     // Check if the user is the streamer and ensure localMediaStream is available
     if (clientsRef.current[0]._id !== userId) {
@@ -393,10 +348,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   const endRoom = () => {
-    if (clientsRef.current[0]._id === userDetails._id && socket.current) {
+    if (streamer._id === userDetails._id && socket.current) {
       socket.current.emit(ACTIONS.END_ROOM, roomId);
       cleanupConnections();
-      navigate("/srdhouse");
+      navigate("/allbroadcasts");
     }
   };
 
@@ -415,15 +370,14 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       });
     }
   };
-
   return {
-    clients,
+    streamer,
+    viewers,
     provideRef,
     handleMute,
     endRoom,
     blockUser,
     messages,
     sendMessage,
-    localMediaStream,
   };
 };
