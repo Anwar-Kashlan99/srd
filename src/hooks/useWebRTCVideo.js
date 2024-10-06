@@ -52,15 +52,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
         // Room clients listener
         socket.current.on(ACTIONS.ROOM_CLIENTS, ({ roomId, clients }) => {
-          // Identify streamer and viewers
-          clients.forEach((client) => {
-            if (client._id === userDetails._id) {
-              setStreamer(client); // You are the streamer
-              captureMedia(); // Only the streamer captures media
+          // Ensure the first client is the streamer
+          if (clients.length > 0) {
+            if (!streamer && clients[0]._id === userDetails._id) {
+              setStreamer(clients[0]); // First client becomes the streamer
+              captureMedia(); // Capture media only for the streamer
             } else {
-              setViewers((prevViewers) => [...prevViewers, client]); // Add a viewer
+              setViewers(clients.slice(1)); // All other clients are viewers
             }
-          });
+          }
         });
         socket.current.on(ACTIONS.ERROR, handleErrorRoom);
         socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
@@ -93,10 +93,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       socket.current.emit(ACTIONS.LEAVE, { roomId });
       socket.current.disconnect(); // Ensure this is called once
       socket.current = null;
-    }
-
-    for (let userId in audioElements.current) {
-      delete audioElements.current[userId];
     }
 
     console.log("All socket listeners removed and cleanup complete.");
@@ -146,13 +142,12 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   const handleJoin = ({ user }) => {
-    if (user._id === userDetails._id) {
-      setStreamer(user); // You are the streamer
+    if (streamer) {
+      setViewers((prevViewers) => [...prevViewers, user]); // New user is a viewer
     } else {
-      setViewers((existingViewers) => [...existingViewers, user]); // Add a viewer
+      setStreamer(user); // First user becomes the streamer
     }
   };
-
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
       if (connections.current[peerId]) return; // Skip if connection exists
@@ -165,17 +160,16 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // If you're the streamer, add your media tracks to the peer connection
-      if (userDetails._id === streamer._id && localMediaStream.current) {
-        localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current);
-        });
-      }
-
-      // Handle remote track received from other peers (for the viewer)
-      connection.ontrack = ({ streams: [remoteStream] }) => {
-        setRemoteStream(user, remoteStream); // Attach the viewer's stream
-      };
+        // Add tracks to peer connection for the streamer
+        if (localMediaStream.current && userDetails._id === streamer?._id) {
+          localMediaStream.current.getTracks().forEach((track) => {
+            connection.addTrack(track, localMediaStream.current);
+          });
+        }
+  
+        connection.ontrack = ({ streams: [remoteStream] }) => {
+          setRemoteStream(user, remoteStream);
+        };
 
       if (createOffer) {
         const offer = await connection.createOffer();
@@ -223,17 +217,11 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   //
   const setRemoteStream = (user, remoteStream) => {
     const videoElement = document.getElementById(`video-${user._id}`);
-
     if (videoElement) {
-      if (videoElement.srcObject !== remoteStream) {
-        videoElement.srcObject = remoteStream;
-      }
-      videoElement.play().catch((error) => {
-        console.error("Error playing the remote video stream:", error);
-      });
+      videoElement.srcObject = remoteStream;
+      videoElement.play().catch((error) => console.error("Error playing remote video", error));
     }
   };
-
   const handleIceCandidate = async ({ peerId, icecandidate }) => {
     const connection = connections.current[peerId];
     if (connection) {
@@ -256,24 +244,20 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       delete connections.current[peerId];
     }
 
-    if (userId !== streamer._id) {
-      setViewers((prevViewers) =>
-        prevViewers.filter((viewer) => viewer._id !== userId)
-      );
+    if (userId === streamer?._id) {
+      setStreamer(null); // If streamer leaves
+    } else {
+      setViewers((prevViewers) => prevViewers.filter((viewer) => viewer._id !== userId));
     }
   };
 
   const handleSetMute = (mute, userId) => {
-    if (userId === streamer._id) {
-      // Handle possible errors in toggling tracks
-      if (localMediaStream.current) {
-        localMediaStream.current.getTracks().forEach((track) => {
-          if (track.kind === "audio") {
-            track.enabled = !mute;
-            console.log(`Track ${track.kind} enabled: ${track.enabled}`);
-          }
-        });
-      }
+    if (userId === userDetails._id && localMediaStream.current) {
+      localMediaStream.current.getTracks().forEach((track) => {
+        if (track.kind === "audio") {
+          track.enabled = !mute;
+        }
+      });
     }
   };
 
@@ -309,11 +293,13 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const handleRoomEnded = () => {
     toast("Live ended", { icon: "⚠️" });
+    cleanupConnections();
     navigate("/allbroadcasts");
   };
 
   const handleErrorRoom = () => {
     toast("You are blocked from this live");
+    cleanupConnections();
     navigate("/allbroadcasts");
   };
 
