@@ -27,6 +27,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [viewers]);
 
   useEffect(() => {
+    console.log("Streamer set:", streamer);
+  }, [streamer]);
+  useEffect(() => {
     const initChat = async () => {
       try {
         socket.current = socketInitLive();
@@ -52,16 +55,23 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
         // Room clients listener
         socket.current.on(ACTIONS.ROOM_CLIENTS, ({ roomId, clients }) => {
-          // Ensure the first client is the streamer
+          console.log("ROOM_CLIENTS:", clients);
+
           if (clients.length > 0) {
-            if (!streamer && clients[0]._id === userDetails._id) {
-              setStreamer(clients[0]); // First client becomes the streamer
+            const firstClientIsStreamer = clients[0]._id === userDetails._id;
+
+            if (!streamer && firstClientIsStreamer) {
+              setStreamer(clients[0]); // First client is the streamer
               captureMedia(); // Capture media only for the streamer
-            } else {
-              setViewers(clients.slice(1)); // All other clients are viewers
             }
+
+            // Set other clients as viewers, excluding the streamer
+            setViewers(
+              clients.filter((client) => client._id !== streamer?._id)
+            );
           }
         });
+
         socket.current.on(ACTIONS.ERROR, handleErrorRoom);
         socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
 
@@ -169,12 +179,18 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media tracks to the new peer connection if media has been captured
-      if (localMediaStream.current && userDetails?._id === streamer?._id) {
+      // Check if the current user is the streamer and has a captured media stream
+      if (localMediaStream.current) {
         console.log("Adding local media tracks to new peer connection.");
-        localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current); // Add each track to the connection
-        });
+
+        // Make sure to add local media tracks if the current user is the streamer
+        if (userDetails._id === streamer._id) {
+          localMediaStream.current.getTracks().forEach((track) => {
+            connection.addTrack(track, localMediaStream.current);
+          });
+        } else {
+          console.log("User is not the streamer, so no media will be sent.");
+        }
       } else {
         console.log("No local media stream found or user is not the streamer.");
       }
