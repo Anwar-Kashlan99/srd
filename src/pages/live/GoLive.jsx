@@ -54,6 +54,7 @@ const GoLive = () => {
   const {
     streamer,
     viewers,
+    videoRef,
     provideRef,
     handleMute,
     endRoom,
@@ -64,7 +65,10 @@ const GoLive = () => {
 
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer._id === userDetails._id;
-  const currentUser = streamer?._id === userDetails._id ? streamer : viewers.find((v) => v._id === userDetails._id);
+  const currentUser =
+    streamer?._id === userDetails._id
+      ? streamer
+      : viewers.find((v) => v._id === userDetails._id);
   const streamerID = streamer?._id;
 
   // Function to handle mute/unmute for streamer
@@ -106,8 +110,8 @@ const GoLive = () => {
           }}
         >
           <video
-            id={`video-${streamerID}`}
-            ref={(instance) => provideRef(instance, streamerID)}
+            id={`video-${userDetails._id}`}
+            ref={videoRef}
             playsInline
             muted={isStreamer} // Mute self for streamer
             style={{
