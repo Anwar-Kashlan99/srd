@@ -125,7 +125,8 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         videoElement.oncanplay = () => videoElement.play();
       }
 
-      addLocalTracksToPeers(); // Add local tracks to all peer connections
+      // Add local tracks to all peer connections for viewers
+      addLocalTracksToPeers();
     } catch (error) {
       console.error("Error capturing media:", error);
       toast.error(
@@ -143,26 +144,26 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
-      // Ensure user is not null or undefined
+      // Ensure the user object is valid before proceeding
       if (!user || !user._id) {
         console.error("Invalid user data:", user);
         return;
       }
 
-      if (connections.current[peerId]) return; // Skip if connection exists
+      if (connections.current[peerId]) return; // Skip if connection already exists
 
       const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media tracks to the peer connection if you're the streamer
+      // Add the streamer's media tracks to the new peer connection if you are the streamer
       if (localMediaStream.current && userDetails._id === streamer._id) {
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
       }
 
-      // Handle remote track received from the viewer's side
+      // Handle remote track received (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
         setRemoteStream(user, remoteStream); // Display the remote stream
       };
@@ -232,7 +233,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
           await connection.addIceCandidate(new RTCIceCandidate(icecandidate));
         } else {
           connection.queuedIceCandidates = connection.queuedIceCandidates || [];
-          connection.queuedIceCandidates.push(icecandidate); // Queue if remote description not set
+          connection.queuedIceCandidates.push(icecandidate); // Queue ICE candidates if remote description isn't set yet
         }
       } catch (error) {
         console.error(`Error adding ICE candidate for peer ${peerId}:`, error);
@@ -270,11 +271,11 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       Object.keys(connections.current).forEach((peerId) => {
         const connection = connections.current[peerId];
 
-        // Check if track has already been added to avoid adding duplicates
+        // Check if the track has already been added to avoid adding duplicates
         const senders = connection.getSenders();
         localMediaStream.current.getTracks().forEach((track) => {
           if (!senders.find((sender) => sender.track === track)) {
-            connection.addTrack(track, localMediaStream.current); // Add track if not already added
+            connection.addTrack(track, localMediaStream.current); // Add the track if it's not already added
           }
         });
       });
