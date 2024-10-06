@@ -101,7 +101,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const captureMedia = async () => {
     if (localMediaStream.current) {
       console.log("Media stream already exists. Skipping new capture.");
-      return; // Exit early if the stream already exists
+
+      // Ensure local tracks are added to new peer connections
+      addLocalTracksToPeers();
+      return;
     }
 
     try {
@@ -156,10 +159,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media tracks to the new peer connection if you are the streamer
+      // Add the streamer's media tracks to the new peer connection if the streamer has captured media
       if (localMediaStream.current && userDetails?._id === streamer?._id) {
         localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current);
+          connection.addTrack(track, localMediaStream.current); // Add track to connection
         });
       }
 
