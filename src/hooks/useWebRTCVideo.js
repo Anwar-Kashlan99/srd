@@ -100,9 +100,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const captureMedia = async () => {
     if (localMediaStream.current) {
-      console.log("Media stream already exists. Skipping new capture.");
+      console.log("Media stream already exists. Adding tracks to all peers.");
 
-      // Ensure local tracks are added to new peer connections
+      // Ensure local tracks are added to all peer connections (new viewers)
       addLocalTracksToPeers();
       return;
     }
@@ -145,35 +145,50 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       setStreamer(user); // First user becomes the streamer
     }
   };
+
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
+      console.log(`New peer joined: ${peerId}, User: ${user.username}`);
+
       // Ensure the user object is valid before proceeding
       if (!user || !user._id) {
         console.error("Invalid user data:", user);
         return;
       }
 
-      if (connections.current[peerId]) return; // Skip if connection already exists
+      // Avoid creating duplicate connections for the same peer
+      if (connections.current[peerId]) {
+        console.log(
+          `Connection for peer ${peerId} already exists. Skipping creation.`
+        );
+        return;
+      }
 
+      // Initialize a new peer connection
       const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media tracks to the new peer connection if the streamer has captured media
+      // Add the streamer's media tracks to the new peer connection if media has been captured
       if (localMediaStream.current && userDetails?._id === streamer?._id) {
+        console.log("Adding local media tracks to new peer connection.");
         localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current); // Add track to connection
+          connection.addTrack(track, localMediaStream.current); // Add each track to the connection
         });
+      } else {
+        console.log("No local media stream found or user is not the streamer.");
       }
 
       // Handle remote track received (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
+        console.log(`Received remote stream from peer ${peerId}`);
         setRemoteStream(user, remoteStream); // Display the remote stream
       };
 
       if (createOffer) {
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
+        console.log(`Sending SDP offer to peer ${peerId}`);
         socket.current.emit(ACTIONS.RELAY_SDP, {
           peerId,
           sessionDescription: offer,
@@ -219,12 +234,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     const videoElement = document.getElementById(`video-${user._id}`);
 
     if (videoElement) {
+      console.log(`Setting remote stream for user ${user._id}`);
       if (videoElement.srcObject !== remoteStream) {
         videoElement.srcObject = remoteStream;
       }
       videoElement.play().catch((error) => {
         console.error("Error playing the remote video stream:", error);
       });
+    } else {
+      console.log(`Video element for user ${user._id} not found.`);
     }
   };
 
@@ -271,6 +289,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const addLocalTracksToPeers = () => {
     if (localMediaStream.current) {
+      console.log("Adding local media tracks to all peer connections.");
       Object.keys(connections.current).forEach((peerId) => {
         const connection = connections.current[peerId];
 
@@ -278,10 +297,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         const senders = connection.getSenders();
         localMediaStream.current.getTracks().forEach((track) => {
           if (!senders.find((sender) => sender.track === track)) {
+            console.log(`Adding track to peer ${peerId}`);
             connection.addTrack(track, localMediaStream.current); // Add the track if it's not already added
+          } else {
+            console.log(`Track already added to peer ${peerId}. Skipping.`);
           }
         });
       });
+    } else {
+      console.log("No local media stream to add tracks from.");
     }
   };
 
