@@ -179,34 +179,34 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // If the streamer is not yet set, retry adding tracks when the streamer is available
-      const retryAddingTracks = (retryCount = 0) => {
-        if (retryCount > 5) {
-          // Retry up to 5 times before giving up
+      // Define a helper function to wait for the streamer to be set
+      const waitForStreamer = async (retryCount = 0) => {
+        if (retryCount > 10) {
+          // Retry up to 10 times with a delay
           console.log("Failed to add tracks after multiple retries.");
           return;
         }
 
-        if (
-          localMediaStream.current &&
-          streamer &&
-          streamer._id &&
-          userDetails._id === streamer._id
-        ) {
-          console.log("Adding local media tracks to new peer connection.");
+        // Check if streamer is set and valid, and if the current user is the streamer
+        if (streamer && streamer._id && userDetails._id === streamer._id) {
+          console.log(
+            "Streamer identified. Adding local media tracks to peer connection."
+          );
           localMediaStream.current.getTracks().forEach((track) => {
             connection.addTrack(track, localMediaStream.current);
           });
         } else {
           console.log(
-            "User is not the streamer or streamer is not yet set. Retrying..."
+            `Streamer not set or user is not the streamer. Retrying... (${
+              retryCount + 1
+            })`
           );
-          setTimeout(() => retryAddingTracks(retryCount + 1), 500); // Retry after 500ms
+          setTimeout(() => waitForStreamer(retryCount + 1), 500); // Retry after 500ms
         }
       };
 
-      // Try adding local tracks immediately, if possible
-      retryAddingTracks();
+      // Call the function to wait for the streamer and add media tracks
+      waitForStreamer();
 
       // Handle remote track received (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
