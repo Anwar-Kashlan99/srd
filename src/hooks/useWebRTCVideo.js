@@ -78,7 +78,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
 
         // Emit the JOIN action
-        socket.current.emit(ACTIONS.JOIN, { roomId, user: userDetails });
+        socket.current.emit(ACTIONS.JOIN, {
+          roomId,
+          user: { ...userDetails, role: userDetails.role },
+        });
       } catch (error) {
         console.error("Error initializing chat:", error);
       }
@@ -161,9 +164,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         `New peer joined: ${peerId}, User: ${user.username}, Role: ${user.role}`
       );
 
-      // Ensure the user object is valid before proceeding
-      if (!user || !user._id) {
-        console.error("Invalid user data:", user);
+      // Ensure the user object is valid and the role is properly set
+      if (!user || !user._id || !user.role) {
+        console.error("Invalid user data or missing role:", user);
         return;
       }
 
@@ -180,7 +183,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media to the connection if the peer is a viewer (audience)
+      // Only add tracks if the peer is a viewer (audience)
       if (localMediaStream.current && user.role === "audience") {
         console.log("Adding local media tracks to audience peer connection.");
         localMediaStream.current.getTracks().forEach((track) => {
