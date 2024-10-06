@@ -57,18 +57,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         socket.current.on(ACTIONS.ROOM_CLIENTS, ({ roomId, clients }) => {
           console.log("ROOM_CLIENTS:", clients);
 
-          // Find the user with the 'admin' role to set as the streamer
-          const adminUser = clients.find((client) => client.role === "admin");
-
-          if (adminUser) {
-            setStreamer(adminUser); // Set the admin as the streamer
-            captureMedia(); // Capture media for the streamer
-          } else {
-            console.error("No admin user found in the room.");
+          // Find the user with the "admin" role and set them as the streamer
+          const adminClient = clients.find((client) => client.role === "admin");
+          if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
+            console.log("Setting the admin as the streamer:", adminClient);
+            setStreamer(adminClient); // Set the admin as the streamer
+            captureMedia(); // Capture media only for the streamer
           }
 
-          // Set all other clients as viewers, excluding the streamer
-          setViewers(clients.filter((client) => client._id !== adminUser?._id));
+          // Set all other users with "audience" role as viewers
+          const audienceClients = clients.filter(
+            (client) => client.role === "audience"
+          );
+          setViewers(audienceClients);
         });
 
         socket.current.on(ACTIONS.ERROR, handleErrorRoom);
@@ -109,41 +110,41 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const captureMedia = async () => {
     if (localMediaStream.current) {
-      console.log("Media stream already exists.");
-      return; // If media stream exists, no need to capture again
+      console.log("Media stream already exists. Adding tracks to all peers.");
+
+      // Ensure local tracks are added to all peer connections (new viewers)
+      addLocalTracksToPeers();
+      return;
     }
 
-    if (userDetails.role === "admin") {
-      // Only capture media if user is the admin (streamer)
-      try {
-        const videoConstraints = {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 },
-        };
+    try {
+      const videoConstraints = {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 },
+      };
 
-        localMediaStream.current = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: videoConstraints,
-        });
+      // Capture media stream for the streamer only
+      localMediaStream.current = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: videoConstraints,
+      });
 
-        console.log("Streamer media captured.");
+      console.log("Streamer media captured.");
 
-        const videoElement = document.getElementById(
-          `video-${userDetails._id}`
-        );
-        if (videoElement) {
-          videoElement.srcObject = localMediaStream.current;
-          videoElement.oncanplay = () => videoElement.play();
-        }
-
-        // Add media tracks to peer connections
-        addLocalTracksToPeers();
-      } catch (error) {
-        console.error("Error capturing media:", error);
+      const videoElement = document.getElementById(`video-${userDetails._id}`);
+      if (videoElement) {
+        videoElement.srcObject = localMediaStream.current;
+        videoElement.oncanplay = () => videoElement.play();
       }
-    } else {
-      console.log("User is not the admin, skipping media capture.");
+
+      // Add local tracks to all peer connections for viewers
+      addLocalTracksToPeers();
+    } catch (error) {
+      console.error("Error capturing media:", error);
+      toast.error(
+        "Error capturing media. Check camera/microphone permissions."
+      );
     }
   };
 
@@ -157,19 +158,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
-      console.log(
-        `New peer joined: ${peerId}, User: ${user.username}, Role: ${user.role}`
-      );
+      console.log(`New peer joined: ${peerId}, User: ${user.username}`);
 
-      // Ensure valid user data
+      // Ensure the user object is valid before proceeding
       if (!user || !user._id) {
         console.error("Invalid user data:", user);
         return;
       }
 
-      // Avoid creating duplicate connections
+      // Avoid creating duplicate connections for the same peer
       if (connections.current[peerId]) {
-        console.log(`Connection for peer ${peerId} already exists. Skipping.`);
+        console.log(
+          `Connection for peer ${peerId} already exists. Skipping creation.`
+        );
         return;
       }
 
@@ -178,25 +179,18 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Only the streamer (admin) adds media tracks to the peer connection
-      if (
-        localMediaStream.current &&
-        userDetails.role === "admin" &&
-        streamer &&
-        streamer._id === userDetails._id
-      ) {
-        console.log("Adding media tracks as streamer.");
+      // Add the streamer's media to the connection if the peer is a viewer
+      if (localMediaStream.current && user.role === "audience") {
+        console.log("Adding local media tracks to audience peer connection.");
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
-      } else {
-        console.log("Not adding media tracks, this user is not the streamer.");
       }
 
-      // Handle remote track for viewers (when they receive stream)
+      // Handle remote track received (for the viewer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
         console.log(`Received remote stream from peer ${peerId}`);
-        setRemoteStream(user, remoteStream); // Display the stream for the viewer
+        setRemoteStream(user, remoteStream); // Display the remote stream
       };
 
       if (createOffer) {
