@@ -62,7 +62,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
           if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
             console.log("Setting the admin as the streamer:", adminClient);
             setStreamer(adminClient); // Set the admin as the streamer
-            captureMedia(); // Capture media only for the streamer
+            if (userDetails._id === adminClient._id) {
+              captureMedia(); // Capture media only for the streamer (admin)
+            }
           }
 
           // Set all other users with "audience" role as viewers
@@ -110,11 +112,8 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const captureMedia = async () => {
     if (localMediaStream.current) {
-      console.log("Media stream already exists. Adding tracks to all peers.");
-
-      // Ensure local tracks are added to all peer connections (new viewers)
-      addLocalTracksToPeers();
-      return;
+      console.log("Media stream already exists. Skipping new capture.");
+      return; // Don't capture media again if it's already captured
     }
 
     try {
@@ -124,7 +123,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         frameRate: { ideal: 30 },
       };
 
-      // Capture media stream for the streamer only
+      // Only capture the streamer's media
       localMediaStream.current = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: videoConstraints,
@@ -158,7 +157,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
     try {
-      console.log(`New peer joined: ${peerId}, User: ${user.username}`);
+      console.log(
+        `New peer joined: ${peerId}, User: ${user.username}, Role: ${user.role}`
+      );
 
       // Ensure the user object is valid before proceeding
       if (!user || !user._id) {
@@ -179,7 +180,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Add the streamer's media to the connection if the peer is a viewer
+      // Add the streamer's media to the connection if the peer is a viewer (audience)
       if (localMediaStream.current && user.role === "audience") {
         console.log("Adding local media tracks to audience peer connection.");
         localMediaStream.current.getTracks().forEach((track) => {
