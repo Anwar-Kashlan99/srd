@@ -10,6 +10,7 @@ import { socketInitLive } from "../socket";
 export const useWebRTCVideo = (roomId, userDetails) => {
   const [streamer, setStreamer] = useStateWithCallback(null); // Single streamer object
   const [viewers, setViewers] = useStateWithCallback([]); // List of viewers
+  const [viewersRemoteStream, setViewersRemoteStream] = useState(null);
 
   const localVideoRef = useRef(null); // For streamer
   const remoteVideoRef = useRef(null); // For viewer
@@ -153,6 +154,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       if (userDetails?._id !== streamer?._id) {
         console.log(`Viewer ${userDetails.username} received remote stream.`);
         setRemoteStream(remoteStream); // Viewer displays the streamer's video
+        setViewersRemoteStream(remoteStream);
       }
     };
     if (createOffer) {
@@ -333,5 +335,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     sendMessage,
     localVideoRef,
     remoteVideoRef,
+    viewersRemoteStream,
   };
 };

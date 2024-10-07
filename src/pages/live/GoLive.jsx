@@ -67,7 +67,15 @@ const GoLive = () => {
     sendMessage,
     localVideoRef,
     remoteVideoRef,
+    viewersRemoteStream,
   } = useWebRTCVideo(roomId, userDetails);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && viewersRemoteStream) {
+      remoteVideoRef.current.srcObject = viewersRemoteStream;
+      remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
+    }
+  }, [remoteVideoRef.current, viewersRemoteStream]);
 
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer?._id === userDetails?._id;
@@ -116,7 +124,7 @@ const GoLive = () => {
             <video
               ref={localVideoRef}
               autoPlay
-              muted // Streamer mutes their own audio playback
+              muted
               playsInline
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
