@@ -12,10 +12,11 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const [viewers, setViewers] = useStateWithCallback([]); // List of viewers
 
   const [messages, setMessages] = useState([]);
+  const videoRef = useRef(null); // Video element reference
 
   const audioElements = useRef({});
   const connections = useRef({});
-  const clientsRef = useRef([]);
+  const clientsRef = useRef([]); // Keep viewers ref in sync
   const socket = useRef(null);
   const localMediaStream = useRef(null);
 
@@ -29,6 +30,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   useEffect(() => {
     console.log("Streamer set:", streamer);
   }, [streamer]);
+
   useEffect(() => {
     const initChat = async () => {
       try {
@@ -54,20 +56,17 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         );
 
         // Room clients listener
-        socket.current.on(ACTIONS.ROOM_CLIENTS, ({ roomId, clients }) => {
+        socket.current.on(ACTIONS.ROOM_CLIENTS, ({ clients }) => {
           console.log("ROOM_CLIENTS:", clients);
-
-          // Find the user with the "admin" role and set them as the streamer
+          // Avoid setting the admin as "audience"
           const adminClient = clients.find((client) => client.role === "admin");
           if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
-            console.log("Setting the admin as the streamer:", adminClient);
-            setStreamer(adminClient); // Set the admin as the streamer
+            setStreamer(adminClient);
             if (userDetails._id === adminClient._id) {
-              captureMedia(); // Capture media only for the streamer (admin)
+              captureMedia(); // Only capture media for the streamer
             }
           }
 
-          // Set all other users with "audience" role as viewers
           const audienceClients = clients.filter(
             (client) => client.role === "audience"
           );
@@ -134,7 +133,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
 
       console.log("Streamer media captured.");
 
-      const videoElement = document.getElementById(`video-${userDetails._id}`);
+      const videoElement = videoRef.current;
       if (videoElement) {
         videoElement.srcObject = localMediaStream.current;
         videoElement.oncanplay = () => videoElement.play();
@@ -164,13 +163,12 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         `New peer joined: ${peerId}, User: ${user.username}, Role: ${user.role}`
       );
 
-      // Ensure the user object is valid and the role is properly set
       if (!user || !user._id || !user.role) {
         console.error("Invalid user data or missing role:", user);
         return;
       }
 
-      // Avoid creating duplicate connections for the same peer
+      // Avoid creating duplicate connections
       if (connections.current[peerId]) {
         console.log(
           `Connection for peer ${peerId} already exists. Skipping creation.`
@@ -183,15 +181,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       const connection = new RTCPeerConnection({ iceServers });
       connections.current[peerId] = connection;
 
-      // Only add tracks if the peer is a viewer (audience)
-      if (localMediaStream.current && user.role === "audience") {
-        console.log("Adding local media tracks to audience peer connection.");
+      // Always add streamer's tracks to the viewer's connection
+      if (localMediaStream.current) {
+        console.log("Adding local media tracks to peer connection.");
         localMediaStream.current.getTracks().forEach((track) => {
           connection.addTrack(track, localMediaStream.current);
         });
       }
 
-      // Handle remote track received (for the viewer)
+      // Handle remote track (if the peer is a streamer)
       connection.ontrack = ({ streams: [remoteStream] }) => {
         console.log(`Received remote stream from peer ${peerId}`);
         setRemoteStream(user, remoteStream); // Display the remote stream
@@ -244,17 +242,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   //
   const setRemoteStream = (user, remoteStream) => {
     const videoElement = document.getElementById(`video-${user._id}`);
-
     if (videoElement) {
-      console.log(`Setting remote stream for user ${user._id}`);
-      if (videoElement.srcObject !== remoteStream) {
-        videoElement.srcObject = remoteStream;
-      }
-      videoElement.play().catch((error) => {
-        console.error("Error playing the remote video stream:", error);
-      });
-    } else {
-      console.log(`Video element for user ${user._id} not found.`);
+      videoElement.srcObject = remoteStream;
+      videoElement.oncanplay = () => videoElement.play();
     }
   };
 
@@ -305,19 +295,15 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       Object.keys(connections.current).forEach((peerId) => {
         const connection = connections.current[peerId];
 
-        // Check if the track has already been added to avoid adding duplicates
+        // Avoid adding duplicate tracks to the connection
         const senders = connection.getSenders();
         localMediaStream.current.getTracks().forEach((track) => {
           if (!senders.find((sender) => sender.track === track)) {
             console.log(`Adding track to peer ${peerId}`);
             connection.addTrack(track, localMediaStream.current); // Add the track if it's not already added
-          } else {
-            console.log(`Track already added to peer ${peerId}. Skipping.`);
           }
         });
       });
-    } else {
-      console.log("No local media stream to add tracks from.");
     }
   };
 
@@ -406,6 +392,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
   };
   return {
+    videoRef,
     streamer,
     viewers,
     provideRef,
