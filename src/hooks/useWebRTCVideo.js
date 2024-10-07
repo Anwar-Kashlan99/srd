@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import freeice from "freeice";
@@ -215,13 +214,26 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       console.error("Error setting remote description", error);
     }
   };
-  //
+
+  useEffect(() => {
+    console.log("remoteVideoRef: ", remoteVideoRef.current);
+  }, [remoteVideoRef.current]);
+
   const setRemoteStream = (remoteStream) => {
     if (remoteVideoRef.current) {
+      console.log("Assigning stream to remote video element");
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
     } else {
-      console.error("Remote video element not found.");
+      console.error(
+        "Remote video element not found. Ref: ",
+        remoteVideoRef.current
+      );
+
+      // Retry logic
+      setTimeout(() => {
+        setRemoteStream(remoteStream);
+      }, 500);
     }
   };
 
@@ -340,6 +352,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       });
     }
   };
+
   return {
     videoRef,
     streamer,
