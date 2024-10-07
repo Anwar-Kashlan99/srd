@@ -32,83 +32,69 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [streamer]);
 
   useEffect(() => {
-    const initChat = async () => {
-      try {
-        socket.current = socketInitLive();
+    const initSocketConnection = async () => {
+      socket.current = socketInitLive();
 
-        if (!socket.current) {
-          console.error("Socket initialization failed");
-          return;
-        }
-
-        // Setup listeners
-        socket.current.on(ACTIONS.JOIN, handleJoin);
-        socket.current.on(ACTIONS.ADD_PEER, handleNewPeer);
-        socket.current.on(ACTIONS.SESSION_DESCRIPTION, setRemoteMedia);
-        socket.current.on(ACTIONS.ICE_CANDIDATE, handleIceCandidate);
-        socket.current.on(ACTIONS.REMOVE_PEER, handleRemovePeer);
-        socket.current.on(ACTIONS.MESSAGE, handleMessageReceived);
-        socket.current.on(ACTIONS.MUTE, ({ userId }) =>
-          handleSetMute(true, userId)
-        );
-        socket.current.on(ACTIONS.UNMUTE, ({ userId }) =>
-          handleSetMute(false, userId)
-        );
-
-        // Room clients listener
-        socket.current.on(ACTIONS.ROOM_CLIENTS, ({ clients }) => {
-          console.log("ROOM_CLIENTS:", clients);
-          // Avoid setting the admin as "audience"
-          const adminClient = clients.find((client) => client.role === "admin");
-          if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
-            setStreamer(adminClient);
-            if (userDetails._id === adminClient._id) {
-              captureMedia(); // Only capture media for the streamer
-            }
-          }
-
-          const audienceClients = clients.filter(
-            (client) => client.role === "audience"
-          );
-          setViewers(audienceClients);
-        });
-
-        socket.current.on(ACTIONS.ERROR, handleErrorRoom);
-        socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
-
-        // Emit the JOIN action
-        socket.current.emit(ACTIONS.JOIN, {
-          roomId,
-          user: { ...userDetails, role: userDetails.role || "audience" },
-        });
-      } catch (error) {
-        console.error("Error initializing chat:", error);
+      if (!socket.current) {
+        console.error("Socket initialization failed");
+        return;
       }
+
+      // Setup listeners
+      socket.current.on(ACTIONS.JOIN, handleJoin);
+      socket.current.on(ACTIONS.ADD_PEER, handleNewPeer);
+      socket.current.on(ACTIONS.SESSION_DESCRIPTION, setRemoteMedia);
+      socket.current.on(ACTIONS.ICE_CANDIDATE, handleIceCandidate);
+      socket.current.on(ACTIONS.REMOVE_PEER, handleRemovePeer);
+      socket.current.on(ACTIONS.ROOM_CLIENTS, handleRoomClients);
+
+      socket.current.on(ACTIONS.ERROR, handleErrorRoom);
+      socket.current.on("ROOM_ENDED_REDIRECT", handleRoomEnded);
+
+      // Emit the JOIN action
+      socket.current.emit(ACTIONS.JOIN, {
+        roomId,
+        user: { ...userDetails, role: userDetails.role || "audience" },
+      });
     };
 
-    initChat();
+    initSocketConnection();
 
     return () => {
-      if (socket.current && socket.current.connected) {
-        cleanupConnections();
-      }
+      cleanupConnections();
     };
   }, [roomId, userDetails]);
 
-  const cleanupConnections = useCallback(() => {
-    Object.values(connections.current).forEach((conn) => conn.close());
-    connections.current = {};
+  const handleRoomClients = ({ clients }) => {
+    const adminClient = clients.find((client) => client.role === "admin");
 
-    socket.current?.emit(ACTIONS.LEAVE, { roomId });
-    socket.current?.disconnect();
-    socket.current = null;
-  }, []);
+    if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
+      setStreamer(adminClient);
 
-  const captureMedia = useCallback(async () => {
-    if (localMediaStream.current) {
-      console.log("Media stream already exists. Skipping new capture.");
-      return;
+      if (userDetails._id === adminClient._id) {
+        captureStreamerMedia(); // Streamer captures media
+      }
     }
+
+    const audienceClients = clients.filter(
+      (client) => client.role === "audience"
+    );
+    setViewers(audienceClients); // Viewers list
+  };
+
+  const cleanupConnections = () => {
+    Object.keys(connections.current).forEach((peerId) => {
+      connections.current[peerId].close();
+    });
+
+    if (socket.current) {
+      socket.current.disconnect();
+      socket.current = null;
+    }
+  };
+
+  const captureStreamerMedia = async () => {
+    if (localMediaStream.current) return; // Already captured media
 
     try {
       const videoConstraints = {
@@ -122,20 +108,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         video: videoConstraints,
       });
 
-      const videoElement = videoRef.current;
-      if (videoElement) {
-        videoElement.srcObject = localMediaStream.current;
-        videoElement.oncanplay = () => videoElement.play();
+      if (videoRef.current) {
+        videoRef.current.srcObject = localMediaStream.current;
+        videoRef.current.oncanplay = () => videoRef.current.play();
       }
 
-      // Send the media to peers
-      addLocalTracksToPeers();
+      addLocalTracksToPeers(); // Share tracks with viewers
     } catch (error) {
       console.error("Error capturing media:", error);
-      toast.error("Could not access media devices. Check permissions.");
+      toast.error(
+        "Error capturing media. Check camera/microphone permissions."
+      );
     }
-  }, []);
-
+  };
   const handleJoin = ({ user }) => {
     if (streamer) {
       setViewers((prevViewers) => [...prevViewers, user]); // New user is a viewer
@@ -144,39 +129,42 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
   };
 
-  const handleNewPeer = useCallback(async ({ peerId, createOffer, user }) => {
-    if (connections.current[peerId]) {
-      console.log(`Peer ${peerId} already connected.`);
-      return;
-    }
+  const handleNewPeer = async ({ peerId, createOffer, user }) => {
+    if (user.role === "audience" && connections.current[peerId]) return; // Skip if already connected
 
     const connection = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
+
     connections.current[peerId] = connection;
 
-    connection.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        socket.current.emit(ACTIONS.RELAY_ICE, {
-          peerId,
-          icecandidate: candidate,
-        });
-      }
-    };
+    // Add streamer's tracks to the connection for viewers
+    if (localMediaStream.current) {
+      localMediaStream.current.getTracks().forEach((track) => {
+        connection.addTrack(track, localMediaStream.current);
+      });
+    }
 
     connection.ontrack = ({ streams: [remoteStream] }) => {
-      setRemoteStream(user, remoteStream); // Handle remote stream
+      // Only handle if the user is a viewer
+      if (user.role === "audience") {
+        console.log(
+          `Received remote stream from streamer for viewer ${peerId}`
+        );
+        setRemoteStream(user, remoteStream); // Display remote stream for the viewer
+      }
     };
 
     if (createOffer) {
       const offer = await connection.createOffer();
       await connection.setLocalDescription(offer);
+
       socket.current.emit(ACTIONS.RELAY_SDP, {
         peerId,
         sessionDescription: offer,
       });
     }
-  }, []);
+  };
 
   //
   const setRemoteMedia = async ({ peerId, sessionDescription }) => {
@@ -210,25 +198,23 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
   //
   const setRemoteStream = (user, remoteStream) => {
+    if (user.role !== "audience") return; // Ensure only viewers receive the stream
+
     const videoElement = document.getElementById(`video-${user._id}`);
-    if (videoElement) {
-      videoElement.srcObject = remoteStream;
-      videoElement.oncanplay = () => videoElement.play();
+    if (!videoElement) {
+      console.error(`Video element for user ${user.username} not found.`);
+      return;
     }
+
+    videoElement.srcObject = remoteStream;
+    videoElement.oncanplay = () => videoElement.play();
   };
 
   const handleIceCandidate = async ({ peerId, icecandidate }) => {
     const connection = connections.current[peerId];
     if (connection) {
-      try {
-        if (connection.remoteDescription) {
-          await connection.addIceCandidate(new RTCIceCandidate(icecandidate));
-        } else {
-          connection.queuedIceCandidates = connection.queuedIceCandidates || [];
-          connection.queuedIceCandidates.push(icecandidate); // Queue ICE candidates if remote description isn't set yet
-        }
-      } catch (error) {
-        console.error(`Error adding ICE candidate for peer ${peerId}:`, error);
+      if (connection.remoteDescription) {
+        await connection.addIceCandidate(new RTCIceCandidate(icecandidate));
       }
     }
   };
@@ -237,14 +223,6 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     if (connections.current[peerId]) {
       connections.current[peerId].close();
       delete connections.current[peerId];
-    }
-
-    if (userId === streamer?._id) {
-      setStreamer(null); // If streamer leaves
-    } else {
-      setViewers((prevViewers) =>
-        prevViewers.filter((viewer) => viewer._id !== userId)
-      );
     }
   };
 

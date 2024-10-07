@@ -110,17 +110,29 @@ const GoLive = () => {
             boxShadow: "2px 4px 7px #707070",
           }}
         >
-          <video
-            id={`video-${streamer?._id}`}
-            ref={videoRef}
-            playsInline
-            muted={isStreamer} // Mute self for streamer
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
+          {" "}
+          {streamer && (
+            <video
+              ref={videoRef}
+              playsInline
+              autoPlay
+              muted // Mute local playback to avoid echo
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          )}
+          {viewers.map((viewer) => (
+            <video
+              key={viewer._id}
+              id={`video-${viewer._id}`}
+              playsInline
+              autoPlay
+              muted // Mute viewer video
+            />
+          ))}
           {isStreamer && (
             <IconButton
               onClick={toggleMute}
