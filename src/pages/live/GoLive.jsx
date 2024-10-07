@@ -43,10 +43,6 @@ const GoLive = () => {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isNonMobile = useMediaQuery("(min-width: 1200px)");
   const isBigScreen = useMediaQuery("(min-width: 1800px)");
-  // const currentUser =
-  //   streamer?._id === userDetails._id
-  //     ? streamer
-  //     : viewers.find((v) => v._id === userDetails._id);
 
   // Fetch room details
   const {
@@ -69,6 +65,11 @@ const GoLive = () => {
     localVideoRef,
     remoteVideoRef,
   } = useWebRTCVideo(roomId, userDetails);
+  const currentUser =
+    streamer?._id === userDetails._id
+      ? streamer
+      : viewers.find((v) => v._id === userDetails._id);
+
   useLayoutEffect(() => {
     if (remoteVideoRef.current) {
       console.log("Video element available");
@@ -80,7 +81,11 @@ const GoLive = () => {
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer?._id === userDetails?._id;
   useEffect(() => {
-    console.log("remoteVideoRef: ", remoteVideoRef.current);
+    if (remoteVideoRef.current) {
+      console.log("Remote video ref is set:", remoteVideoRef.current);
+    } else {
+      console.error("Remote video ref is still null");
+    }
   }, [remoteVideoRef.current]);
 
   const streamerID = streamer?._id;
@@ -126,7 +131,7 @@ const GoLive = () => {
           {isStreamer ? (
             <video
               ref={localVideoRef}
-              autoPlay
+              controls
               muted
               playsInline
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -134,6 +139,7 @@ const GoLive = () => {
           ) : (
             <video
               ref={remoteVideoRef}
+              controls
               playsInline
               style={{ width: "100%", height: "auto" }} // Optional styles
               muted={false} // Ensure it's not muted for viewers
@@ -174,12 +180,12 @@ const GoLive = () => {
                 : "600px",
             }}
           >
-            {/* <ChatRoomLive
+            <ChatRoomLive
               reverse={true}
               messages={messages}
               sendMessage={sendMessage}
               currentUserId={currentUser}
-            /> */}
+            />
           </Box>
         )}
       </Box>

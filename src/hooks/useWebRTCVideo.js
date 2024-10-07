@@ -162,6 +162,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     // Add streamer's tracks to the connection for viewers
     if (localMediaStream.current) {
       localMediaStream.current.getTracks().forEach((track) => {
+        console.log("Adding track:", track);
         connection.addTrack(track, localMediaStream.current);
       });
     }
