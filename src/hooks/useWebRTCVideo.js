@@ -150,7 +150,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
 
     connection.ontrack = ({ streams: [remoteStream] }) => {
-      if (userDetails._id !== streamer._id) {
+      if (userDetails?._id !== streamer?._id) {
         console.log(`Viewer ${userDetails.username} received remote stream.`);
         setRemoteStream(remoteStream); // Viewer displays the streamer's video
       }
