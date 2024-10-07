@@ -216,24 +216,19 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   useEffect(() => {
-    console.log("remoteVideoRef: ", remoteVideoRef.current);
+    console.log("remoteVideoRef changed:", remoteVideoRef.current);
   }, [remoteVideoRef.current]);
 
+  // Log when stream is being set
   const setRemoteStream = (remoteStream) => {
+    console.log("Attempting to set remote stream:", remoteStream);
     if (remoteVideoRef.current) {
-      console.log("Assigning stream to remote video element");
+      console.log("Setting remote stream");
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
     } else {
-      console.error(
-        "Remote video element not found. Ref: ",
-        remoteVideoRef.current
-      );
-
-      // Retry logic
-      setTimeout(() => {
-        setRemoteStream(remoteStream);
-      }, 500);
+      console.log("Remote video element not found, retrying in 500ms...");
+      setTimeout(() => setRemoteStream(remoteStream), 500);
     }
   };
 

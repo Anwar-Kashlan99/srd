@@ -80,10 +80,8 @@ const GoLive = () => {
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer?._id === userDetails?._id;
   useEffect(() => {
-    if (!isStreamer && remoteVideoRef.current) {
-      remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
-    }
-  }, [remoteVideoRef, isStreamer]);
+    console.log("remoteVideoRef: ", remoteVideoRef.current);
+  }, [remoteVideoRef.current]);
 
   const streamerID = streamer?._id;
 
@@ -125,14 +123,23 @@ const GoLive = () => {
             boxShadow: "2px 4px 7px #707070",
           }}
         >
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            playsInline
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-
+          {isStreamer ? (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              muted
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              style={{ width: "100%", height: "auto" }} // Optional styles
+              muted={false} // Ensure it's not muted for viewers
+            />
+          )}
           {isStreamer && (
             <IconButton
               onClick={toggleMute}
