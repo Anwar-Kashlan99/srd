@@ -67,18 +67,15 @@ const GoLive = () => {
     sendMessage,
     localVideoRef,
     remoteVideoRef,
-    viewersRemoteStream,
   } = useWebRTCVideo(roomId, userDetails);
-
-  useEffect(() => {
-    if (remoteVideoRef.current && viewersRemoteStream) {
-      remoteVideoRef.current.srcObject = viewersRemoteStream;
-      remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
-    }
-  }, [remoteVideoRef.current, viewersRemoteStream]);
 
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer?._id === userDetails?._id;
+  useEffect(() => {
+    if (!isStreamer && remoteVideoRef.current) {
+      remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
+    }
+  }, [remoteVideoRef, isStreamer]);
 
   const streamerID = streamer?._id;
 
