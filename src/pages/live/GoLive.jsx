@@ -126,7 +126,7 @@ const GoLive = () => {
           }}
         >
           <video
-            ref={remoteVideoRef}
+            ref={localVideoRef}
             autoPlay
             muted
             playsInline
