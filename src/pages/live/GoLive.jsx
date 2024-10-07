@@ -29,9 +29,8 @@ import { SharePopup } from "../../components/SharePopup";
 import { useNavigate, useParams } from "react-router-dom";
 import { useGetRoomQuery } from "../../store/srdClubSlice";
 import { useSelector } from "react-redux";
-
-import ChatRoomLive from "../../components/ChatRoomLive";
 import { useWebRTCVideo } from "../../hooks/useWebRTCVideo";
+import ChatRoomLive from "../../components/ChatRoomLive";
 
 const GoLive = () => {
   const { id: roomId } = useParams();
@@ -57,49 +56,40 @@ const GoLive = () => {
   } = useGetRoomQuery(roomId);
 
   // WebRTC hooks
-
-  const { clients, localMediaStream, remoteStreams } = useWebRTCVideo(
-    roomId,
-    userDetails,
-    isAdmin
-  );
-
-  const localVideoRef = useRef(null);
-  const remoteVideoRefs = useRef({});
-
-  const currentUser = clients?.find((client) => client._id === userDetails._id);
-
-  useEffect(() => {
-    if (currentUser && currentUser.role === "admin") {
-      setIsAdmin(true);
+  const {
+    streamer,
+    viewers,
+    videoRef,
+    provideRef,
+    handleMute,
+    endRoom,
+    blockUser,
+    messages,
+    sendMessage,
+    localVideoRef,
+    remoteVideoRef,
+  } = useWebRTCVideo(roomId, userDetails);
+  useLayoutEffect(() => {
+    if (remoteVideoRef.current) {
+      console.log("Video element available");
+    } else {
+      console.log("Video element not ready");
     }
-  }, [clients, userDetails]);
+  }, [remoteVideoRef]);
 
   // Determine if the current user is the streamer or a viewer
-  // const isStreamer = streamer && streamer?._id === userDetails?._id;
-  // const streamerID = streamer?._id;
+  const isStreamer = streamer && streamer?._id === userDetails?._id;
+  useEffect(() => {
+    console.log("remoteVideoRef: ", remoteVideoRef.current);
+  }, [remoteVideoRef.current]);
+
+  const streamerID = streamer?._id;
 
   // Function to handle mute/unmute for streamer
-  // const toggleMute = () => {
-  //   setMuted(!isMuted);
-  //   handleMute(isMuted, userDetails._id); // Toggle mute for the streamer
-  // };
-
-  useEffect(() => {
-    if (localVideoRef.current && localMediaStream.current) {
-      localVideoRef.current.srcObject = localMediaStream.current;
-    }
-
-    clients?.forEach((client) => {
-      if (remoteStreams.current[client._id]) {
-        if (!remoteVideoRefs.current[client._id]) {
-          remoteVideoRefs.current[client._id] = React.createRef();
-        }
-        remoteVideoRefs.current[client._id].current.srcObject =
-          remoteStreams.current[client._id];
-      }
-    });
-  }, [clients, localMediaStream, remoteStreams]);
+  const toggleMute = () => {
+    setMuted(!isMuted);
+    handleMute(isMuted, userDetails._id); // Toggle mute for the streamer
+  };
 
   return (
     <Box
@@ -133,28 +123,40 @@ const GoLive = () => {
             boxShadow: "2px 4px 7px #707070",
           }}
         >
-          <div>
-            {isAdmin && (
-              <div>
-                <h1>You're Streaming</h1>
-                <video autoPlay ref={localVideoRef} muted controls />
-              </div>
-            )}
-
-            <h2>Audience:</h2>
-            <div>
-              {clients?.map((client) => (
-                <div key={client._id}>
-                  <h3>{client.username}</h3>
-                  <video
-                    autoPlay
-                    ref={remoteVideoRefs.current[client._id]}
-                    controls
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+          {isStreamer ? (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              muted
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <video
+              ref={remoteVideoRef}
+              playsInline
+              style={{ width: "100%", height: "auto" }} // Optional styles
+              muted={false} // Ensure it's not muted for viewers
+            />
+          )}
+          {isStreamer && (
+            <IconButton
+              onClick={toggleMute}
+              sx={{
+                position: "absolute",
+                bottom: 10,
+                right: 10,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                color: "white",
+              }}
+            >
+              {isMuted ? (
+                <MicOutlined sx={{ fontSize: "28px" }} />
+              ) : (
+                <MicOffOutlined sx={{ fontSize: "28px" }} />
+              )}
+            </IconButton>
+          )}
         </Box>
         {/*chat */}
         {!isMobile && (
