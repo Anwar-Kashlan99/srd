@@ -28,7 +28,6 @@ import { SharePopup } from "../../components/SharePopup";
 import { useNavigate, useParams } from "react-router-dom";
 import { useGetRoomQuery } from "../../store/srdClubSlice";
 import { useSelector } from "react-redux";
-import { useWebRTC } from "../../hooks/useWebRTCVideo2";
 import { useWebRTCVideo } from "../../hooks/useWebRTCVideo";
 import ChatRoomLive from "../../components/ChatRoomLive";
 
@@ -38,10 +37,15 @@ const GoLive = () => {
   const userDetails = useSelector((state) => state.user.userDetails);
 
   const [isMuted, setMuted] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isNonMobile = useMediaQuery("(min-width: 1200px)");
   const isBigScreen = useMediaQuery("(min-width: 1800px)");
+  // const currentUser =
+  //   streamer?._id === userDetails._id
+  //     ? streamer
+  //     : viewers.find((v) => v._id === userDetails._id);
 
   // Fetch room details
   const {
@@ -65,10 +69,7 @@ const GoLive = () => {
 
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer._id === userDetails._id;
-  const currentUser =
-    streamer?._id === userDetails._id
-      ? streamer
-      : viewers.find((v) => v._id === userDetails._id);
+
   const streamerID = streamer?._id;
 
   // Function to handle mute/unmute for streamer
@@ -155,12 +156,12 @@ const GoLive = () => {
                 : "600px",
             }}
           >
-            <ChatRoomLive
+            {/* <ChatRoomLive
               reverse={true}
               messages={messages}
               sendMessage={sendMessage}
               currentUserId={currentUser}
-            />
+            /> */}
           </Box>
         )}
       </Box>

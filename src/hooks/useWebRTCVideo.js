@@ -96,26 +96,18 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [roomId, userDetails]);
 
   const cleanupConnections = useCallback(() => {
-    for (let peerId in connections.current) {
-      if (connections.current[peerId]) {
-        connections.current[peerId].close();
-        delete connections.current[peerId];
-      }
-    }
-    if (socket.current) {
-      Object.values(ACTIONS).forEach((action) => socket.current.off(action));
-      socket.current.emit(ACTIONS.LEAVE, { roomId });
-      socket.current.disconnect(); // Ensure this is called once
-      socket.current = null;
-    }
+    Object.values(connections.current).forEach((conn) => conn.close());
+    connections.current = {};
 
-    console.log("All socket listeners removed and cleanup complete.");
-  }, [roomId]);
+    socket.current?.emit(ACTIONS.LEAVE, { roomId });
+    socket.current?.disconnect();
+    socket.current = null;
+  }, []);
 
-  const captureMedia = async () => {
+  const captureMedia = useCallback(async () => {
     if (localMediaStream.current) {
       console.log("Media stream already exists. Skipping new capture.");
-      return; // Don't capture media again if it's already captured
+      return;
     }
 
     try {
@@ -125,13 +117,10 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         frameRate: { ideal: 30 },
       };
 
-      // Only capture the streamer's media
       localMediaStream.current = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: videoConstraints,
       });
-
-      console.log("Streamer media captured.");
 
       const videoElement = videoRef.current;
       if (videoElement) {
@@ -139,15 +128,13 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         videoElement.oncanplay = () => videoElement.play();
       }
 
-      // Add local tracks to all peer connections for viewers
+      // Send the media to peers
       addLocalTracksToPeers();
     } catch (error) {
       console.error("Error capturing media:", error);
-      toast.error(
-        "Error capturing media. Check camera/microphone permissions."
-      );
+      toast.error("Could not access media devices. Check permissions.");
     }
-  };
+  }, []);
 
   const handleJoin = ({ user }) => {
     if (streamer) {
@@ -157,57 +144,39 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
   };
 
-  const handleNewPeer = async ({ peerId, createOffer, user }) => {
-    try {
-      console.log(
-        `New peer joined: ${peerId}, User: ${user.username}, Role: ${user.role}`
-      );
-
-      if (!user || !user._id || !user.role) {
-        console.error("Invalid user data or missing role:", user);
-        return;
-      }
-
-      // Avoid creating duplicate connections
-      if (connections.current[peerId]) {
-        console.log(
-          `Connection for peer ${peerId} already exists. Skipping creation.`
-        );
-        return;
-      }
-
-      // Initialize a new peer connection
-      const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
-      const connection = new RTCPeerConnection({ iceServers });
-      connections.current[peerId] = connection;
-
-      // Always add streamer's tracks to the viewer's connection
-      if (localMediaStream.current) {
-        console.log("Adding local media tracks to peer connection.");
-        localMediaStream.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localMediaStream.current);
-        });
-      }
-
-      // Handle remote track (if the peer is a streamer)
-      connection.ontrack = ({ streams: [remoteStream] }) => {
-        console.log(`Received remote stream from peer ${peerId}`);
-        setRemoteStream(user, remoteStream); // Display the remote stream
-      };
-
-      if (createOffer) {
-        const offer = await connection.createOffer();
-        await connection.setLocalDescription(offer);
-        console.log(`Sending SDP offer to peer ${peerId}`);
-        socket.current.emit(ACTIONS.RELAY_SDP, {
-          peerId,
-          sessionDescription: offer,
-        });
-      }
-    } catch (error) {
-      console.error("Error handling new peer:", error);
+  const handleNewPeer = useCallback(async ({ peerId, createOffer, user }) => {
+    if (connections.current[peerId]) {
+      console.log(`Peer ${peerId} already connected.`);
+      return;
     }
-  };
+
+    const connection = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+    connections.current[peerId] = connection;
+
+    connection.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        socket.current.emit(ACTIONS.RELAY_ICE, {
+          peerId,
+          icecandidate: candidate,
+        });
+      }
+    };
+
+    connection.ontrack = ({ streams: [remoteStream] }) => {
+      setRemoteStream(user, remoteStream); // Handle remote stream
+    };
+
+    if (createOffer) {
+      const offer = await connection.createOffer();
+      await connection.setLocalDescription(offer);
+      socket.current.emit(ACTIONS.RELAY_SDP, {
+        peerId,
+        sessionDescription: offer,
+      });
+    }
+  }, []);
 
   //
   const setRemoteMedia = async ({ peerId, sessionDescription }) => {
@@ -341,27 +310,14 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const provideRef = (instance, userId) => {
     audioElements.current[userId] = instance;
   };
-
   const handleMute = (isMute, userId) => {
-    // Check if the user is the streamer and ensure localMediaStream is available
-    if (clientsRef.current[0]._id !== userId) {
-      console.log("Viewers cannot mute/unmute.");
-      return;
-    }
+    if (streamer._id !== userId) return; // Ensure only the streamer can mute
 
-    if (!localMediaStream.current) {
-      console.log("No media stream available to mute/unmute.");
-      return; // Exit early if localMediaStream is null
-    }
-
-    // Toggle mute/unmute for audio tracks
-    localMediaStream.current.getTracks().forEach((track) => {
-      if (track.kind === "audio") {
-        track.enabled = !isMute;
-      }
+    localMediaStream.current?.getTracks().forEach((track) => {
+      if (track.kind === "audio") track.enabled = !isMute;
     });
 
-    // Notify other clients about the mute/unmute action
+    // Notify other users
     socket.current.emit(isMute ? ACTIONS.MUTE : ACTIONS.UNMUTE, {
       roomId,
       userId,
