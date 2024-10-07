@@ -69,20 +69,31 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   }, [roomId, userDetails]);
 
   const handleRoomClients = ({ clients }) => {
-    const adminClient = clients.find((client) => client.role === "admin");
+    if (!clients || clients.length === 0) {
+      console.error("No clients found.");
+      return;
+    }
 
+    // Find the streamer (admin) in the list of clients
+    const adminClient = clients.find((client) => client?.role === "admin");
+
+    // Check if an admin client is found, and set the streamer if not already set
     if (adminClient && (!streamer || streamer._id !== adminClient._id)) {
       setStreamer(adminClient);
 
+      // If the current user is the admin (streamer), capture their media
       if (userDetails._id === adminClient._id) {
         captureStreamerMedia(); // Streamer captures media
       }
+    } else {
+      console.log("Admin client not found or already set as streamer.");
     }
 
+    // Filter audience clients and update the viewers list
     const audienceClients = clients.filter(
-      (client) => client.role === "audience"
+      (client) => client?.role === "audience"
     );
-    setViewers(audienceClients); // Viewers list
+    setViewers(audienceClients);
   };
 
   const cleanupConnections = () => {
@@ -134,7 +145,14 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   };
 
   const handleNewPeer = async ({ peerId, createOffer, user }) => {
-    if (user.role === "audience" && connections.current[peerId]) return; // Skip if already connected
+    if (!user || !user.role) {
+      console.error("Invalid user or missing role.");
+      return;
+    }
+
+    if (user.role === "audience" && connections.current[peerId]) {
+      return; // Skip if already connected
+    }
 
     const connection = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -155,6 +173,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         setRemoteStream(remoteStream); // Viewer displays the streamer's video
       }
     };
+
     if (createOffer) {
       const offer = await connection.createOffer();
       await connection.setLocalDescription(offer);
