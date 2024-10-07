@@ -2,6 +2,7 @@ import React, {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -68,6 +69,13 @@ const GoLive = () => {
     localVideoRef,
     remoteVideoRef,
   } = useWebRTCVideo(roomId, userDetails);
+  useLayoutEffect(() => {
+    if (remoteVideoRef.current) {
+      console.log("Video element available");
+    } else {
+      console.log("Video element not ready");
+    }
+  }, [remoteVideoRef]);
 
   // Determine if the current user is the streamer or a viewer
   const isStreamer = streamer && streamer?._id === userDetails?._id;
@@ -130,7 +138,8 @@ const GoLive = () => {
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              style={{ width: "100%", height: "auto" }} // Optional styles
+              muted={false} // Ensure it's not muted for viewers
             />
           )}
           {isStreamer && (
