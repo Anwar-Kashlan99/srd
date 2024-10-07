@@ -125,23 +125,14 @@ const GoLive = () => {
             boxShadow: "2px 4px 7px #707070",
           }}
         >
-          {isStreamer ? (
-            <video
-              ref={localVideoRef}
-              autoPlay
-              muted
-              playsInline
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              style={{ width: "100%", height: "auto" }} // Optional styles
-              muted={false} // Ensure it's not muted for viewers
-            />
-          )}
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            muted
+            playsInline
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+
           {isStreamer && (
             <IconButton
               onClick={toggleMute}
