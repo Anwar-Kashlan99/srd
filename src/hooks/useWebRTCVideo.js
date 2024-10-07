@@ -11,6 +11,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
   const [streamer, setStreamer] = useStateWithCallback(null); // Single streamer object
   const [viewers, setViewers] = useStateWithCallback([]); // List of viewers
 
+  const localVideoRef = useRef(null); // For streamer
+  const remoteVideoRef = useRef(null); // For viewer
+
   const [messages, setMessages] = useState([]);
   const videoRef = useRef(null); // Video element reference
 
@@ -108,9 +111,9 @@ export const useWebRTCVideo = (roomId, userDetails) => {
         video: videoConstraints,
       });
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = localMediaStream.current;
-        videoRef.current.oncanplay = () => videoRef.current.play();
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localMediaStream.current;
+        localVideoRef.current.oncanplay = () => localVideoRef.current.play();
       }
 
       addLocalTracksToPeers(); // Share tracks with viewers
@@ -121,6 +124,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
       );
     }
   };
+
   const handleJoin = ({ user }) => {
     if (streamer) {
       setViewers((prevViewers) => [...prevViewers, user]); // New user is a viewer
@@ -146,15 +150,11 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
 
     connection.ontrack = ({ streams: [remoteStream] }) => {
-      // Only handle if the user is a viewer
-      if (user.role === "audience") {
-        console.log(
-          `Received remote stream from streamer for viewer ${peerId}`
-        );
-        setRemoteStream(user, remoteStream); // Display remote stream for the viewer
+      if (userDetails._id !== streamer._id) {
+        console.log(`Viewer ${userDetails.username} received remote stream.`);
+        setRemoteStream(remoteStream); // Viewer displays the streamer's video
       }
     };
-
     if (createOffer) {
       const offer = await connection.createOffer();
       await connection.setLocalDescription(offer);
@@ -197,17 +197,13 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     }
   };
   //
-  const setRemoteStream = (user, remoteStream) => {
-    if (user.role !== "audience") return; // Ensure only viewers receive the stream
-
-    const videoElement = document.getElementById(`video-${user._id}`);
-    if (!videoElement) {
-      console.error(`Video element for user ${user.username} not found.`);
-      return;
+  const setRemoteStream = (remoteStream) => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.oncanplay = () => remoteVideoRef.current.play();
+    } else {
+      console.error("Remote video element not found.");
     }
-
-    videoElement.srcObject = remoteStream;
-    videoElement.oncanplay = () => videoElement.play();
   };
 
   const handleIceCandidate = async ({ peerId, icecandidate }) => {
@@ -335,5 +331,7 @@ export const useWebRTCVideo = (roomId, userDetails) => {
     blockUser,
     messages,
     sendMessage,
+    localVideoRef,
+    remoteVideoRef,
   };
 };

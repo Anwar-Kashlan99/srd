@@ -65,10 +65,12 @@ const GoLive = () => {
     blockUser,
     messages,
     sendMessage,
+    localVideoRef,
+    remoteVideoRef,
   } = useWebRTCVideo(roomId, userDetails);
 
   // Determine if the current user is the streamer or a viewer
-  const isStreamer = streamer && streamer._id === userDetails._id;
+  const isStreamer = streamer && streamer?._id === userDetails?._id;
 
   const streamerID = streamer?._id;
 
@@ -110,29 +112,22 @@ const GoLive = () => {
             boxShadow: "2px 4px 7px #707070",
           }}
         >
-          {" "}
-          {streamer && (
+          {isStreamer ? (
             <video
-              ref={videoRef}
-              playsInline
+              ref={localVideoRef}
               autoPlay
-              muted // Mute local playback to avoid echo
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
+              muted // Streamer mutes their own audio playback
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           )}
-          {viewers.map((viewer) => (
-            <video
-              key={viewer._id}
-              id={`video-${viewer._id}`}
-              playsInline
-              autoPlay
-              muted // Mute viewer video
-            />
-          ))}
           {isStreamer && (
             <IconButton
               onClick={toggleMute}
